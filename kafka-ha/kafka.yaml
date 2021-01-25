@@ -1,0 +1,111 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-svc
+  namespace: kafka
+  labels:
+    app: kafka
+spec:
+  ports:
+  - port: 9093
+    name: server
+  clusterIP: None   #创建无头服务，如果需要对外暴露端口可自行创建service
+  selector:
+    app: kafka
+---
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: kafka-pdb
+  namespace: kafka
+spec:
+  selector:
+    matchLabels:
+      app: kafka
+  minAvailable: 2
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  namespace: kafka
+spec:
+  selector:
+    matchLabels:
+      app: kafka
+  serviceName: kafka-svc
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: "app"
+                    operator: In
+                    values:
+                    - kafka
+              topologyKey: "kubernetes.io/hostname"
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+             - weight: 1
+               podAffinityTerm:
+                 labelSelector:
+                    matchExpressions:
+                      - key: "app"
+                        operator: In
+                        values:
+                        - zk
+                 topologyKey: "kubernetes.io/hostname"
+      terminationGracePeriodSeconds: 300
+      volumes:
+        - name: kafka-data
+          hostPath:
+            path: /mnt/kafka
+      containers:
+      - name: k8skafka
+        imagePullPolicy: Always
+        image: registry.cn-hangzhou.aliyuncs.com/ccgg/k8skafka:v1  #可自行去阿里云拉去对应镜像
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "1000m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        ports:
+        - containerPort: 9093
+          name: server
+        command:
+        - sh
+        - -c
+        - "exec kafka-server-start.sh /opt/kafka/config/server.properties --override broker.id=${HOSTNAME##*-} \   
+          --override listeners=PLAINTEXT://:9093 \
+          --override zookeeper.connect=zk-0.zk-headless.kafka.svc.cluster.local:2181,zk-1.zk-headless.kafka.svc.cluster.local:2181,zk-2.zk-headless.kafka.svc.cluster.local:2181 \   #这里配置了与zookeeper进行连接，非常重要。格式为：pod名.zookeeper的service名.名称空间.svc.cluster.local:2181
+          --override log.dir=/var/lib/kafka "
+        env:
+        - name: KAFKA_HEAP_OPTS
+          value : "-Xmx512M -Xms512M"
+        - name: KAFKA_OPTS
+          value: "-Dlogging.level=INFO"
+        volumeMounts:
+        - name: kafka-data
+          mountPath: /var/lib/kafka
+        readinessProbe:
+          exec:
+           command: 
+            - sh 
+            - -c 
+            - "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server=localhost:9093"
+      securityContext:
+        runAsUser: 1000
+        fsGroup: 1000

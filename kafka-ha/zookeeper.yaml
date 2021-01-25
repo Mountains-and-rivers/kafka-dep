@@ -1,0 +1,114 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: zk-headless
+  namespace: kafka
+  labels:
+    app: zk
+spec:
+  ports:
+  - port: 2888
+    name: server
+  - port: 3888
+    name: leader-election
+  clusterIP: None   #指定无头服务，需要对外暴露自行创建一个service
+  selector:
+    app: zk
+---
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: zk-pdb
+  namespace: kafka
+spec:
+  selector:
+    matchLabels:
+      app: zk
+  minAvailable: 2
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: zk     #指定的zookeeper名称会在kafka.yaml里面用来配置和kafka连接，会创建pod为zk-0,zk-1,zk-2......这里只创建了三个
+  namespace: kafka
+spec:
+  selector:
+    matchLabels:
+      app: zk
+  serviceName: zk-headless
+  replicas: 3
+  updateStrategy:
+    type: RollingUpdate # K8s 会将 StatefulSet 管理的 pod 分批次逐步替换掉
+  podManagementPolicy: OrderedReady # 设置为Parallel这样Pod的创建就不必等待，而是会同时创建、同时删除
+  template:
+    metadata:
+      labels:
+        app: zk
+    spec:
+      volumes:
+        - name: kafka-data
+          hostPath:
+            path: /mnt/kafka
+      containers:
+      - name: k8s-zk
+        image: k8szk:1.0-3.4.10   #需要指定自己的镜像，可去阿里云上下载zookeeper镜像
+        imagePullPolicy: Always
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "1000m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        ports:
+          - containerPort: 2181
+            name: client
+          - containerPort: 2888
+            name: server
+          - containerPort: 3888
+            name: leader-election
+        command:
+        - sh
+        - -c
+        - "start-zookeeper \
+          --servers=5 \
+          --data_dir=/var/lib/zookeeper/data \
+          --data_log_dir=/var/lib/zookeeper/data/log \
+          --conf_dir=/opt/zookeeper/conf \
+          --client_port=2181 \
+          --election_port=3888 \
+          --server_port=2888 \
+          --tick_time=2000 \
+          --init_limit=10 \
+          --sync_limit=5 \
+          --heap=512M \
+          --max_client_cnxns=60 \
+          --snap_retain_count=3 \
+          --purge_interval=12 \
+          --max_session_timeout=40000 \
+          --min_session_timeout=4000 \
+          --log_level=INFO"
+        - "zkGenConfig.sh && exec zkServer.sh start-foreground"
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - "zookeeper-ready 2181"
+          initialDelaySeconds: 10
+          timeoutSeconds: 5
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - "zookeeper-ready 2181"
+          initialDelaySeconds: 10
+          timeoutSeconds: 5
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+        - name: zookeeper-pvc
+          mountPath: /var/lib/zookeeper
+      securityContext:
+        runAsUser: 1000
+        fsGroup: 1000
