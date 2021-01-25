@@ -1,7 +1,12 @@
 apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka
+---
+apiVersion: v1
 kind: Service
 metadata:
-  name: zk-headless
+  name: zk-hs
   namespace: kafka
   labels:
     app: zk
@@ -11,7 +16,21 @@ spec:
     name: server
   - port: 3888
     name: leader-election
-  clusterIP: None   #指定无头服务，需要对外暴露自行创建一个service
+  clusterIP: None
+  selector:
+    app: zk
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zk-cs
+  namespace: kafka
+  labels:
+    app: zk
+spec:
+  ports:
+  - port: 2181
+    name: client
   selector:
     app: zk
 ---
@@ -24,54 +43,53 @@ spec:
   selector:
     matchLabels:
       app: zk
-  minAvailable: 2
+  maxUnavailable: 1
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: zk     #指定的zookeeper名称会在kafka.yaml里面用来配置和kafka连接，会创建pod为zk-0,zk-1,zk-2......这里只创建了三个
+  name: zk
   namespace: kafka
 spec:
   selector:
     matchLabels:
       app: zk
-  serviceName: zk-headless
-  replicas: 3
+  serviceName: zk-hs
+  replicas: 1
   updateStrategy:
-    type: RollingUpdate # K8s 会将 StatefulSet 管理的 pod 分批次逐步替换掉
-  podManagementPolicy: OrderedReady # 设置为Parallel这样Pod的创建就不必等待，而是会同时创建、同时删除
+    type: RollingUpdate
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
   template:
     metadata:
       labels:
         app: zk
     spec:
       volumes:
-        - name: kafka-data
+        - name: zookeeper-pvc
           hostPath:
-            path: /mnt/kafka
+            path: /mnt/zk
       containers:
-      - name: k8s-zk
-        image: k8szk:1.0-3.4.10   #需要指定自己的镜像，可去阿里云上下载zookeeper镜像
-        imagePullPolicy: Always
+      - name: kubernetes-zookeeper
+        imagePullPolicy: IfNotPresent
+        image: "mirrorgooglecontainers/kubernetes-zookeeper:1.0-3.4.10"
         resources:
           requests:
-            memory: "1Gi"
-            cpu: "1000m"
-          limits:
-            memory: "1Gi"
-            cpu: "1000m"
+            memory: "128Mi"
+            cpu: "0.1"
         ports:
-          - containerPort: 2181
-            name: client
-          - containerPort: 2888
-            name: server
-          - containerPort: 3888
-            name: leader-election
+        - containerPort: 2181
+          name: client
+        - containerPort: 2888
+          name: server
+        - containerPort: 3888
+          name: leader-election
         command:
         - sh
         - -c
         - "start-zookeeper \
-          --servers=5 \
+          --servers=3 \
           --data_dir=/var/lib/zookeeper/data \
           --data_log_dir=/var/lib/zookeeper/data/log \
           --conf_dir=/opt/zookeeper/conf \
@@ -88,7 +106,6 @@ spec:
           --max_session_timeout=40000 \
           --min_session_timeout=4000 \
           --log_level=INFO"
-        - "zkGenConfig.sh && exec zkServer.sh start-foreground"
         readinessProbe:
           exec:
             command:
@@ -105,10 +122,8 @@ spec:
             - "zookeeper-ready 2181"
           initialDelaySeconds: 10
           timeoutSeconds: 5
-        imagePullPolicy: IfNotPresent
         volumeMounts:
         - name: zookeeper-pvc
           mountPath: /var/lib/zookeeper
       securityContext:
-        runAsUser: 1000
-        fsGroup: 1000
+        runAsUser: 0
