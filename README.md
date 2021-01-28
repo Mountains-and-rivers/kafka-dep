@@ -139,7 +139,7 @@ zk-2      1/1     Running   0          47m   10.244.1.179   node01   <none>     
 
 ```
 [root@k8s-master sts]# kubectl exec -it kafka-0 -n kafka sh
-$ cd/opt/kafka/bin
+$ cd /opt/kafka/bin
 #创建test topic
 $ ./kafka-topics.sh --create --topic test --zookeeper zk-0.zk-hs.kafka.svc.cluster.local:2181  --partitions 3 --replication-factor 3
 Created topic "test".
