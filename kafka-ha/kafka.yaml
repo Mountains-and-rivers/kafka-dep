@@ -2,8 +2,8 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: kafka-hs
   namespace: kafka
+  name: kafka-svc
   labels:
     app: kafka
 spec:
@@ -14,31 +14,17 @@ spec:
   selector:
     app: kafka
 ---
-apiVersion: policy/v1beta1
-kind: PodDisruptionBudget
-metadata:
-  name: kafka-pdb
-  namespace: kafka
-spec:
-  selector:
-    matchLabels:
-      app: kafka
-  maxUnavailable: 1
----
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: kafka
   namespace: kafka
+  name: kafka
 spec:
   selector:
     matchLabels:
       app: kafka
-  serviceName: kafka-hs
+  serviceName: kafka-svc
   replicas: 3
-  podManagementPolicy: Parallel
-  updateStrategy:
-    type: RollingUpdate
   template:
     metadata:
       labels:
@@ -52,11 +38,11 @@ spec:
       containers:
       - name: k8skafka
         imagePullPolicy: IfNotPresent
-        image: mirrorgooglecontainers/kubernetes-kafka:1.0-10.2.1
+        image: registry.cn-hangzhou.aliyuncs.com/jaxzhai/k8skafka:v1
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "0.1"
+            memory: "1Gi"
+            cpu: 500m
         ports:
         - containerPort: 9093
           name: server
@@ -64,7 +50,7 @@ spec:
         - sh
         - -c
         - "exec kafka-server-start.sh /opt/kafka/config/server.properties --override broker.id=${HOSTNAME##*-} \
-          --override listeners=PLAINTEXT://:9093 \
+          --override listeners=PLAINTEXT://0.0.0.0:9093 \
           --override zookeeper.connect=zk-0.zk-hs.kafka.svc.cluster.local:2181,zk-1.zk-hs.kafka.svc.cluster.local:2181,zk-2.zk-hs.kafka.svc.cluster.local:2181 \
           --override log.dir=/var/lib/kafka \
           --override auto.create.topics.enable=true \
@@ -144,7 +130,7 @@ spec:
           --override log.preallocate=false \
           --override log.retention.check.interval.ms=300000 \
           --override max.connections.per.ip=2147483647 \
-          --override num.partitions=3 \
+          --override num.partitions=1 \
           --override producer.purgatory.purge.interval.requests=1000 \
           --override replica.fetch.backoff.ms=1000 \
           --override replica.fetch.max.bytes=1048576 \
@@ -152,17 +138,11 @@ spec:
           --override reserved.broker.max.id=1000 "
         env:
         - name: KAFKA_HEAP_OPTS
-          value : "-Xmx256M -Xms256M"
+          value : "-Xmx512M -Xms512M"
         - name: KAFKA_OPTS
           value: "-Dlogging.level=INFO"
         volumeMounts:
         - name: kafka-data
           mountPath: /var/lib/kafka
-        readinessProbe:
-          exec:
-           command:
-            - sh
-            - -c
-            - "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server=localhost:9093"
       securityContext:
         runAsUser: 0
