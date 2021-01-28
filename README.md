@@ -152,12 +152,12 @@ test
 
 ```
 #生产者
-$   ./kafka-console-producer.sh --topic test --broker-list kafka-0.kafka-hs.kafka.svc.cluster.local:9093,kafka-1.kafka-hs.kafka.svc.cluster.local:9093,kafka-2.kafka-hs.kafka.svc.cluster.local:9093
+$    ./kafka-console-producer.sh --topic test3 --broker-list kafka-0.kafka-svc.kafka.svc.cluster.local:9093,kafka-1.kafka-svc.kafka.svc.cluster.local:9093,kafka-2.kafka-svc.kafka.svc.cluster.local:9093
 
 this is a test message
 hell world
 #消费者消费数据
-$  ./kafka-console-consumer.sh --topic test --zookeeper zookeeper zk-0.zk-hs.kafka.svc.cluster.local:2181 --from-beginning
+$  ./kafka-console-consumer.sh --zookeeper zk-0.zk-hs.kafka.svc.cluster.local:2181 --topic test --from-beginning
 Using the ConsoleConsumer with old consumer is deprecated and will be removed in a future major release. Consider using the new consumer by passing [bootstrap-server] instead of [zookeeper].
 hell world
 this is a test message
@@ -167,7 +167,7 @@ this is a test message
 
 ## k8s集群内部域名:
 
-broker-list: kafka-0.kafka-hs.kafka.svc.cluster.local:9093,kafka-1.kafka-hs.kafka.svc.cluster.local:9093,kafka-2.kafka-hs.kafka.svc.cluster.local:9093
+broker-list: kafka-0.kafka.svc.cluster.local:9093,kafka-1.kafka.svc.cluster.local:9093,kafka-2.kafka.svc.cluster.local:9093
 
 ## k8s集群外部域名:
 
@@ -184,7 +184,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: zk-cs
-  namespace: bigdata
+  namespace: kafka
   labels:
     app: zk
 spec:
